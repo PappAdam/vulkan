@@ -1,10 +1,16 @@
 #include "vk_init.h"
 #include <stdlib.h>
 
+#define GRAPHICS_BIT 0b00000001
+#define PRESENT_BIT 0b00000010
+#define CLEAR_ 0b0
+
 typedef struct QueueFamilyIndices
 {
     uint32_t graphicsFamily;
-    uint8_t foundGraphicsFam;
+    uint32_t presentFamily;
+
+    uint8_t foundSupport;
 } QueueFamilyIndices;
 
 uint8_t createInstance(App *app)
@@ -41,14 +47,19 @@ uint8_t createInstance(App *app)
 
     if (result != VK_SUCCESS)
     {
-        printf("Instance creation was failed due to: %s\n", getErrorNameFromVkResult(result));
+        printf("Instance creation was failed due to: %s\n", getErrorNameFromVkResult(&result));
         return 0;
     }
 
     return 1;
 }
 
-QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device)
+uint8_t supportedQueue(QueueFamilyIndices *indicies)
+{
+    return indicies->foundSupport & GRAPHICS_BIT && indicies->foundSupport & PRESENT_BIT;
+}
+
+QueueFamilyIndices findQueueFamilies(App *app, VkPhysicalDevice device)
 {
     QueueFamilyIndices indicies;
 
@@ -60,10 +71,24 @@ QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device)
 
     for (uint32_t i = 0; i < queueFamilyCount; i++)
     {
+        indicies.foundSupport &= CLEAR_;
+
         if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
         {
             indicies.graphicsFamily = i;
-            indicies.foundGraphicsFam = 1;
+            indicies.foundSupport |= GRAPHICS_BIT;
+        }
+
+        VkBool32 presentSupport = 0;
+
+        if (presentSupport)
+        {
+            indicies.presentFamily = i;
+            indicies.foundSupport |= PRESENT_BIT;
+        }
+
+        if (supportedQueue(&indicies))
+        {
             break;
         }
     }
@@ -74,22 +99,19 @@ QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device)
 }
 
 uint8_t
-isDeviceSuitable(VkPhysicalDevice device)
+isDeviceSuitable(App *app, VkPhysicalDevice device)
 {
-    QueueFamilyIndices indicies = findQueueFamilies(device);
+    QueueFamilyIndices indicies = findQueueFamilies(app, device);
 
     VkPhysicalDeviceProperties deviceProps;
     VkPhysicalDeviceFeatures deviceFeatures;
     vkGetPhysicalDeviceProperties(device, &deviceProps);
     vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-    puts("Device found:");
-    printf("   Physical device name: \n\t%s\n\t%i\n", deviceProps.deviceName, deviceProps.deviceType);
-
-    return indicies.foundGraphicsFam;
+    return supportedQueue(&indicies);
 }
 
-uint8_t pickPhysicalDevice(App *app)
+VkPhysicalDevice pickPhysicalDevice(App *app)
 {
     uint32_t deviceCount = 0;
     VkPhysicalDevice physicalDevice = NULL;
@@ -99,7 +121,7 @@ uint8_t pickPhysicalDevice(App *app)
     if (deviceCount == 0)
     {
         printf("No devices has been found");
-        return 0;
+        return NULL;
     }
 
     VkPhysicalDevice *phyDevices = (VkPhysicalDevice *)malloc(sizeof(VkPhysicalDevice) * deviceCount);
@@ -108,7 +130,7 @@ uint8_t pickPhysicalDevice(App *app)
 
     for (uint8_t i = 0; i < deviceCount; i++)
     {
-        if (isDeviceSuitable(phyDevices[i]))
+        if (isDeviceSuitable(app, phyDevices[i]))
         {
             physicalDevice = phyDevices[i];
             free(phyDevices);
@@ -118,16 +140,57 @@ uint8_t pickPhysicalDevice(App *app)
 
     if (physicalDevice == NULL)
     {
-        printf("No suitable physical device has been found (device requirements: discrateGPU, geometry shader support)");
+        printf("No suitable physical device has been found\n");
+        return NULL;
+    }
+
+    return physicalDevice;
+}
+
+uint8_t createLogicalDevice(App *app, VkPhysicalDevice physicalDevice)
+{
+    QueueFamilyIndices indicies = findQueueFamilies(app, physicalDevice);
+    float queuePriority = 1.0f;
+
+    VkDeviceQueueCreateInfo queueCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = indicies.graphicsFamily,
+        .queueCount = 1,
+        .pQueuePriorities = &queuePriority,
+    };
+
+    // TODO specify device features
+    VkPhysicalDeviceFeatures deviceFeatures;
+
+    VkDeviceCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pQueueCreateInfos = &queueCreateInfo,
+        .queueCreateInfoCount = 1,
+        .pEnabledFeatures = &deviceFeatures,
+        .enabledExtensionCount = 0,
+    };
+
+    VkResult result = vkCreateDevice(physicalDevice, &createInfo, NULL, &(app->device));
+
+    if (result != VK_SUCCESS)
+    {
+        printf("Failed to create logical device due to: %s\n", getErrorNameFromVkResult(&result));
         return 0;
     }
+
+    vkGetDeviceQueue(app->device, indicies.graphicsFamily, 0, &(app->graphicsQueue));
 
     return 1;
 }
 
 uint8_t initVulkan(App *app)
 {
-    if (!createInstance(app) || !pickPhysicalDevice(app))
+    if (!createInstance(app))
+        return 0;
+
+    VkPhysicalDevice physicalDevice = pickPhysicalDevice(app);
+
+    if (!physicalDevice || !createLogicalDevice(app, physicalDevice))
         return 0;
 
     return 1;

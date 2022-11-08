@@ -5,8 +5,13 @@ int main(int argc, char const *argv[])
 
     App app = newApp();
 
-    if (!runApp(&app))
+    if (!app.isInitilized)
+    {
+        printf("App is not initilized properly\n");
         return -1;
+    }
+
+    runApp(&app);
 
     return 0;
 }

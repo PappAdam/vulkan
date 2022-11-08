@@ -16,3 +16,17 @@ uint8_t initWindow(App *app)
 
     return 1;
 }
+
+uint8_t createSurface(App *app)
+{
+
+    VkResult result = glfwCreateWindowSurface(app->instance, app->window, NULL, &(app->surface));
+
+    if (result != VK_SUCCESS)
+    {
+        printf("Failed to create window surface due to %s", getErrorNameFromVkResult(&result));
+        return 0;
+    }
+
+    return 1;
+}

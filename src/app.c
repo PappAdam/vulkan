@@ -6,8 +6,12 @@ App newApp()
 {
     App app;
 
-    initWindow(&app);
-    initVulkan(&app);
+    if (initWindow(&app) &&
+        initVulkan(&app) &&
+        createSurface(&app))
+    {
+        app.isInitilized = 1;
+    }
 
     return app;
 }
@@ -26,7 +30,9 @@ uint8_t runApp(App *app)
 
 void closeApp(App *app)
 {
+    vkDestroySurfaceKHR(app->instance, app->surface, NULL);
     vkDestroyInstance(app->instance, NULL);
+    vkDestroyDevice(app->device, NULL);
 
     glfwDestroyWindow(app->window);
 
@@ -35,9 +41,9 @@ void closeApp(App *app)
 
 // debug
 
-char *getErrorNameFromVkResult(VkResult result)
+char *getErrorNameFromVkResult(VkResult *result)
 {
-    switch (result)
+    switch (*result)
     {
     case VK_SUCCESS:
         return "VK_SUCCESS";
